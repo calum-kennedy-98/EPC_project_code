@@ -1,4 +1,71 @@
- ### Targets file to produce EPC manuscript
+# =============================================================================
+# _targets.R — Analysis pipeline for "High resolution mapping of wood burning
+# hotspots using Energy Performance Certificates: A case study in England and Wales"
+#
+# OVERVIEW
+# This file defines the full reproducible analysis pipeline using the {targets}
+# package. Running targets::tar_make() (or sourcing run.R) executes all targets
+# in dependency order, caching results in _targets/ as .qs files.
+#
+# DATA INPUTS (all under Data/, downloaded separately — see README.md)
+#   - Data/raw/epc_data/data_epc_raw.parquet   Raw EPC records (produced by run.R)
+#   - Data/raw/geo_files/nsul_lookup.parquet    ONS UPRN-to-LSOA lookup
+#   - Data/raw/sca_data/                        Smoke Control Area shapefiles (England, Wales)
+#   - Data/raw/lsoa_data/                       IMD 2019, ethnicity (TS021), urban/rural,
+#                                               ward/region lookups, LSOA area, median age
+#   - Data/raw/census_data/                     Census 2021 accommodation types (TS044)
+#   - Data/raw/map_boundary_data/               LSOA, ward, and LAD boundary shapefiles
+#   - Data/raw/laei_data/                       London Atmospheric Emissions Inventory shapefile
+#   - Data/raw/naei_data/                       National Atmospheric Emissions Inventory shapefile
+#   - Data/raw/os_data/                         OS AddressBase housing type summary (parquet)
+#
+# PIPELINE SECTIONS
+#   1. DATA GENERATION (lines ~64-338)
+#      Cleans raw EPC data; builds the UPRN-to-SCA lookup and LSOA covariate lookup;
+#      merges all covariates onto EPC records; produces cross-sectional summary datasets
+#      at LSOA, ward, LA, and region level with Census-adjusted WF prevalence estimates;
+#      loads boundary shapefiles and merges to summary data for mapping; loads LAEI and
+#      NAEI inventory shapefiles; derives inline summary datasets for regional and
+#      temporal trend analysis; downloads PM2.5 monitoring data from AURN, AQE, and WAQN
+#      and merges to EPC data via spatial buffers of 500 m, 1000 m, and 2000 m.
+#
+#   2. FIGURES (lines ~339-1013)
+#      Produces all manuscript and supplementary figures, including:
+#      - Choropleth maps of WF/SFA prevalence and concentration at LSOA level for
+#        England/Wales and London, with separate panels for national and London insets
+#      - LAEI/NAEI emission and predicted concentration maps for London
+#      - Facet wrap scatter plots of WF prevalence vs. IMD score, white ethnicity,
+#        and median age by region
+#      - Facet wrap line plots of WF prevalence by property type, IMD decile, and year
+#        (urban and rural separately)
+#      - Bubble scatter plots of WF prevalence vs. IMD and ethnicity by region
+#      - Three-panel openair correlation plots for AURN/AQE/WAQN monitoring data,
+#        comparing EPC-derived WF density and LAEI/NAEI emissions to PM2.5 levels
+#      All figures saved to Output/Figures/ and Output/Maps/ as PNG files.
+#
+#   3. TABLES AND MODELS (lines ~1014-1329)
+#      - Beta regression models of Census-adjusted WF prevalence at LSOA level,
+#        stratified by urban/rural classification, with region fixed effects
+#      - Summary tables: housing characteristics by WF status, LSOA decile
+#        characteristics by WF prevalence, housing type composition (OS vs EPC),
+#        WF prevalence by EPC sequence number and property type
+#      All tables exported to Output/Tables/ as LaTeX .tex files via gtsave().
+#
+# OUTPUTS
+#   Output/Figures/   PNG figures (700 dpi unless noted)
+#   Output/Maps/      PNG choropleth maps (700 dpi)
+#   Output/Tables/    LaTeX table files (.tex)
+#
+# NOTES
+#   - format = "qs" on line 54 requires the {qs2} package. If unavailable, comment
+#     out this line to fall back to the default RDS format (slower).
+#   - The crew_controller block (lines ~14-18) is commented out. Uncomment and
+#     adjust workers to enable parallel execution via the {crew} package.
+#   - Targets with format = "file" are saved by the function itself (e.g. ggsave);
+#     the target value is the file path, used by targets for change detection.
+# =============================================================================
+
+### Targets file to produce EPC manuscript
 
 # Load packages required to define the pipeline
 library(targets)

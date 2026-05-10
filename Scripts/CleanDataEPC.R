@@ -8,6 +8,61 @@
 
 # Comments ---------------------------------------------------------------------
 
+#' Clean raw EPC data and derive wood fuel and solid fuel appliance indicators
+#'
+#' @description
+#' Reads a raw EPC Parquet file, applies a sequence of cleaning steps, and derives
+#' binary indicator variables for the presence of wood fuel (WF) and solid fuel
+#' appliance (SFA) heat sources as both main and secondary heating systems.
+#' The function also standardises property type to Census 2021 categories, recodes
+#' tenure labels, and flags pre-1950 construction.
+#'
+#' @param path_data_epc_raw A character string giving the path to the raw EPC Parquet
+#'   file (typically \code{"Data/raw/epc_data/data_epc_raw.parquet"} relative to the
+#'   project root). This file is produced by \code{get_epc_data}.
+#'
+#' @return A tibble with one row per EPC certificate (all years 2009 to present),
+#'   with the following key derived columns in addition to the retained raw fields:
+#'   \describe{
+#'     \item{\code{year}}{Integer. Calendar year of the inspection date.}
+#'     \item{\code{pre_1950}}{Integer (0/1). 1 if the construction age band corresponds
+#'       to a pre-1950 build, 0 otherwise.}
+#'     \item{\code{any_sfa_m}, \code{any_sfa_s}}{Integer (0/1/NA). Whether the main
+#'       or secondary heat source description contains any solid fuel appliance keyword.
+#'       \code{NA} if the corresponding description is missing.}
+#'     \item{\code{wood_m}, \code{wood_s}}{Integer (0/1/NA). Whether the main or
+#'       secondary heat source description contains a wood fuel keyword.}
+#'     \item{\code{any_sfa}, \code{any_wood}}{Integer (0/1/NA). Whether either the
+#'       main or secondary heat source is an SFA or wood fuel, respectively.}
+#'     \item{\code{any_sfa_h}, \code{any_wood_h}}{Integer (0/1/NA). As \code{any_sfa}
+#'       and \code{any_wood}, but restricted to houses (detached, semi-detached, or
+#'       terrace). \code{NA} for all other property types.}
+#'     \item{\code{property_type_census}}{Factor. Property type recoded to match Census
+#'       2021 categories: \code{"Detached"}, \code{"Semi Detached"}, \code{"Terrace"},
+#'       \code{"Flat"}, \code{"Other accommodation"}, or \code{NA} (unmapped types).}
+#'     \item{\code{tenure}}{Character. Standardised tenure category.}
+#'   }
+#'   The columns \code{construction_age_band}, \code{mainheat_description}, and
+#'   \code{secondheat_description} are dropped from the output.
+#'
+#' @details
+#' \strong{SFA classification}: SFA presence is detected by case-insensitive string
+#' matching against keywords in the raw heat source description fields. The SFA lookup
+#' includes wood, coal, mineral, anthracite, and smokeless fuel terms (including Welsh
+#' equivalents \code{"coed"} and \code{"glo"}). The wood fuel lookup is a subset,
+#' comprising \code{"wood"}, \code{"coed"}, and \code{"dual fuel"}.
+#'
+#' \strong{Missing data}: Strings commonly used to represent missing values in the EPC
+#' data (e.g. \code{"N/A"}, \code{"not available"}, \code{"invalid!"}) are replaced
+#' with \code{NA} before classification. The indicator variables are set to \code{NA}
+#' (not 0) when the source description is missing, to distinguish true absence from
+#' unrecorded data.
+#'
+#' \strong{Property type}: Properties described as \code{"bungalow"} or \code{"house"}
+#' in the raw data are assigned to detached, semi-detached, or terrace categories
+#' based on \code{built_form}. Houses with missing \code{built_form} are recorded as
+#' \code{"House Form Missing"} and excluded from house-restricted indicators.
+
 # Define function to clean main EPC data ---------------------------------------
 
 clean_data_epc <- function(path_data_epc_raw){

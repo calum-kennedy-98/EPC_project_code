@@ -1,17 +1,35 @@
 # Name of script: UtilityFunctions
-# Description:  Defines set of utility functions which are used in other scripts
-# and geographical resolution
+# Description:  Defines a set of utility functions used across multiple analysis
+#               scripts, including housing type summaries, correlation helpers,
+#               spatial utilities, and table formatting functions
 # Created by: Calum Kennedy (calum.kennedy.20@ucl.ac.uk)
 # Created on: 04-09-2024
 # Latest update by: Calum Kennedy
 # Latest update on: 04-09-2024
-# Update notes: 
 
-# Comments ---------------------------------------------------------------------
+#' Compare property type distributions between OS AddressBase and EPC datasets
+#'
+#' @description
+#' Computes the count and proportion of residential properties by Census 2021 housing
+#' type in both the OS AddressBase and EPC datasets, and returns them in a single joined
+#' data frame for comparison. Properties with missing house form are excluded from both
+#' datasets before computing proportions.
+#'
+#' @param data_os A data frame of OS AddressBase residential records containing a
+#'   \code{property_type_census} column with Census 2021 categories.
+#' @param data_epc A data frame of EPC records containing a \code{uprn} column and a
+#'   \code{property_type_census} column. Duplicate UPRNs are deduplicated before
+#'   counting so that each unique property is counted once.
+#'
+#' @return A data frame with one row per Census housing type, containing:
+#'   \describe{
+#'     \item{\code{property_type_census}}{Factor. Housing type category.}
+#'     \item{\code{n_os}, \code{perc_os}}{Integer and numeric. Count and proportion of
+#'       OS AddressBase properties of each type.}
+#'     \item{\code{n_epc}, \code{perc_epc}}{Integer and numeric. Count and proportion of
+#'       EPC properties of each type (unique UPRNs only).}
+#'   }
 
-
-# Function to generate dataframe of percentage of properties by Census housing type
-# for OS vs. EPC data
 make_data_housing_type_os_epc <- function(data_os,
                                           data_epc){
   
@@ -49,7 +67,18 @@ make_data_housing_type_os_epc <- function(data_os,
                                     
 }
 
-# Function to download and prepare OS AddressBase data -------------------------
+#' Load OS AddressBase residential property data from a Parquet file
+#'
+#' @description
+#' Reads a pre-processed OS AddressBase Parquet file containing residential property
+#' records. The cleaning and filtering steps (active records, residential classification,
+#' Census property type assignment) have been applied upstream and are not repeated here.
+#'
+#' @param data_os_path A character string giving the file path to the OS AddressBase
+#'   Parquet file.
+#'
+#' @return A data frame of OS AddressBase residential property records as stored in
+#'   the Parquet file.
 
 get_os_data <- function(data_os_path){
   
@@ -79,7 +108,26 @@ get_os_data <- function(data_os_path){
   
 }
 
-# Function to calculate correlation coefficient for arbitrary dataframe --------
+#' Compute a correlation coefficient from a bootstrap-indexed data frame
+#'
+#' @description
+#' A bootstrap-compatible statistic function that computes the correlation between
+#' two named columns of a data frame using a row index vector supplied by
+#' \code{boot::boot}. Designed to be passed as the \code{statistic} argument to
+#' \code{boot}.
+#'
+#' @param data A data frame containing the columns named by \code{x_var} and
+#'   \code{y_var}.
+#' @param x_var A character string giving the name of the predictor column.
+#' @param y_var A character string giving the name of the response column.
+#' @param idx An integer vector of row indices defining the bootstrap sample.
+#'   Supplied automatically by \code{boot::boot}.
+#' @param correlation_method A character string specifying the correlation method.
+#'   Passed to \code{cor}. One of \code{"pearson"}, \code{"spearman"}, or
+#'   \code{"kendall"}.
+#'
+#' @return A numeric scalar: the correlation coefficient between \code{y_var} and
+#'   \code{x_var} computed on the rows selected by \code{idx}.
 
 get_corr <- function(data, 
                      x_var, 
@@ -96,8 +144,35 @@ get_corr <- function(data,
   
 }
 
-# Function to calculate difference in correlation coefficients 
-# for arbitrary dataframe with a filter var ------------------------------------
+#' Compute the winter-minus-summer difference in correlation coefficients for bootstrap inference
+#'
+#' @description
+#' A bootstrap-compatible statistic function that computes the difference between the
+#' winter and summer Spearman (or other) correlation coefficients in a single bootstrap
+#' call. This allows \code{boot::boot.ci} to produce a valid confidence interval for the
+#' seasonal contrast directly, rather than combining two separate intervals. Designed to
+#' be passed as the \code{statistic} argument to \code{boot::boot}.
+#'
+#' @param data A data frame containing the columns named by \code{x_var}, \code{y_var},
+#'   and \code{season_var}.
+#' @param x_var A character string giving the name of the predictor column.
+#' @param y_var A character string giving the name of the response column.
+#' @param season_var A character string giving the name of the season column. Must
+#'   contain the values \code{"Winter"} and \code{"Summer"}.
+#' @param idx An integer vector of row indices defining the bootstrap sample.
+#'   Supplied automatically by \code{boot::boot}.
+#' @param correlation_method A character string specifying the correlation method.
+#'   Passed to \code{cor}. Typically \code{"spearman"}.
+#'
+#' @return A numeric scalar: the winter correlation coefficient minus the summer
+#'   correlation coefficient, computed on the rows selected by \code{idx}.
+#'
+#' @details
+#' The function subsets the bootstrapped data into winter and summer subsets using
+#' \code{season_var}, then computes \code{cor} within each subset. A positive return
+#' value indicates a stronger positive association in winter than in summer, which is
+#' the expected direction if PM\eqn{_{2.5}} elevations are partly attributable to
+#' domestic wood burning.
 
 get_corr_diff <- function(data, 
                      x_var, 
@@ -130,7 +205,22 @@ get_corr_diff <- function(data,
   
 }
 
-# Function to load shapefile from path and filter English/Welsh LSOAs ----------
+#' Load an ONS boundary shapefile and filter to England and Wales
+#'
+#' @description
+#' Reads a polygon shapefile using \code{sf::read_sf}, standardises column names with
+#' \code{janitor::clean_names}, and removes Scottish (prefix \code{"S"}) and Northern
+#' Irish (prefix \code{"N"}) geographies based on the specified geography code column.
+#'
+#' @param shapefile_path A character string giving the file path to the \code{.shp}
+#'   shapefile (e.g. LSOA, ward, or LAD boundaries from the ONS Open Geography Portal).
+#' @param geography_var An unquoted column name in the shapefile containing the ONS
+#'   geography code (e.g. \code{lsoa21cd}, \code{lad22cd}, \code{wd22cd}). Geographies
+#'   whose codes begin with \code{"S"} (Scotland) or \code{"N"} (Northern Ireland) are
+#'   excluded.
+#'
+#' @return An \code{sf} object containing only English and Welsh polygon geometries,
+#'   with column names converted to snake_case by \code{clean_names}.
 
 get_shapefile <- function(shapefile_path,
                           geography_var){
@@ -148,7 +238,19 @@ get_shapefile <- function(shapefile_path,
   
 }
 
-# Function to get the 'ith' percentile of a dataframe column -------------------
+#' Compute a specified percentile of a numeric vector
+#'
+#' @description
+#' A thin wrapper around \code{quantile} that returns a single named numeric value
+#' for the specified percentile, ignoring \code{NA} values. Used in
+#' \code{make_choropleth_map} to compute winsorisation thresholds.
+#'
+#' @param variable A numeric vector.
+#' @param percentile A numeric scalar in [0, 1] specifying the desired percentile
+#'   (e.g. \code{0.05} for the 5th percentile, \code{0.95} for the 95th).
+#'
+#' @return A named numeric scalar: the value of \code{variable} at the specified
+#'   percentile, with \code{NA} values excluded.
 
 get_percentile <- function(variable, percentile){
   
@@ -158,7 +260,53 @@ get_percentile <- function(variable, percentile){
   
 }
 
-# Define function to get summary of housing type by OA from Census -------------
+#' Load and prepare Census 2021 housing type counts by LSOA with geographic identifiers
+#'
+#' @description
+#' Reads the Census 2021 accommodation type table (TS044) and a set of geographic
+#' lookup files to produce a data frame of housing stock counts by LSOA and property
+#' type. The resulting data frame is used in \code{make_summary_data_by_group} to
+#' reweight EPC-derived WF prevalence estimates to reflect the full housing stock
+#' composition.
+#'
+#' @param path_data_housing_type_census A character string giving the file path to the
+#'   Census 2021 accommodation type CSV (TS044, 8-category version). Must contain
+#'   columns \code{"Accommodation type (8 categories)"}, \code{"Lower layer Super
+#'   Output Areas Code"}, and \code{"Observation"}.
+#' @param path_region A character string giving the file path to the ONS ward-to-region
+#'   lookup CSV (Ward to LAD to County to Region to Country, December 2022).
+#' @param path_ward A character string giving the file path to the ONS LSOA-to-ward
+#'   lookup CSV (LSOA 2021 to Ward to LTLA, May 2022).
+#'
+#' @return A data frame with one row per unique LSOA-by-property-type combination,
+#'   containing:
+#'   \describe{
+#'     \item{\code{lsoa21cd}}{Character. 2021 LSOA code.}
+#'     \item{\code{property_type_census}}{Factor. Census 2021 housing type, recoded
+#'       to match EPC categories: \code{"Detached"}, \code{"Semi Detached"},
+#'       \code{"Terrace"}, \code{"Flat"}, \code{"Other accommodation"}.}
+#'     \item{\code{n_properties}}{Integer. Number of properties of this type in this
+#'       LSOA according to Census 2021. Rows with \code{n_properties == 0} are excluded.}
+#'     \item{\code{property_type_h}}{Integer (0/1). 1 if the property type is a house
+#'       (detached, semi-detached, or terrace), 0 otherwise.}
+#'     \item{\code{property_type_perc}}{Numeric. Proportion of all properties in the
+#'       LSOA that are of this type.}
+#'     \item{\code{wd22cd}, \code{wd22nm}, \code{lad22cd}, \code{lad22nm},
+#'       \code{rgn22nm}, \code{ctry22nm}}{Factor. Ward, LAD, and region identifiers
+#'       (December 2022 boundaries).}
+#'   }
+#'
+#' @details
+#' Census accommodation categories are recoded to match the EPC classification scheme:
+#' purpose-built flats are mapped to \code{"Flat"}; converted/shared housing,
+#' commercial conversions, and caravans are mapped to \code{"Other accommodation"};
+#' semi-detached and terraced houses are renamed to match EPC conventions. Multiple
+#' Census rows that collapse to the same recoded category within an LSOA (e.g. multiple
+#' "Other accommodation" subtypes) are summed before further calculations.
+#'
+#' Duplicate LSOAs arising from the ward boundary crossing two Local Authorities
+#' (Ryedale/Scarborough) are resolved by the same name-matching logic used in
+#' \code{make_lsoa_lookup_data}.
 
 make_data_housing_type_census <- function(path_data_housing_type_census,
                                           path_region,
@@ -254,9 +402,32 @@ make_data_housing_type_census <- function(path_data_housing_type_census,
   
 }
 
-# Functions for formatting tables ----------------------------------------------
+# Table formatting functions ---------------------------------------------------
 
-# Define function to get summary table by EPC number 
+#' Summarise wood fuel prevalence by property type and EPC sequence number
+#'
+#' @description
+#' Filters the property-level EPC dataset to properties that have had exactly
+#' \code{n_epc} certificates, restricts to houses (detached, semi-detached, terrace),
+#' and returns a wide-format data frame showing WF prevalence and property counts by
+#' property type and EPC sequence number (first, second, etc.).
+#'
+#' @param data A data frame of property-level EPC records with covariates, produced by
+#'   \code{merge_data_epc_cleaned_covars}. Must contain columns \code{total_epc},
+#'   \code{property_type_census}, \code{any_wood_h}, \code{epc_number}, and \code{uprn}.
+#' @param n_epc A positive integer specifying the total number of EPC certificates to
+#'   filter on (e.g. \code{2} to retain only properties with exactly two EPCs).
+#'
+#' @return A data frame in wide format with one row per Census house type category,
+#'   containing columns \code{property_type_census}, \code{n_epc} (the filter value),
+#'   and for each EPC sequence number: \code{wood_perc_h_{k}} (mean WF prevalence at
+#'   EPC number \code{k}) and \code{n_{k}} (count of properties). Rows are sorted
+#'   alphabetically by \code{property_type_census}.
+#'
+#' @details
+#' This function is designed to be called via \code{make_summary_tabs_by_epc_number},
+#' which applies it across a range of \code{n_epc} values and binds the results.
+
 make_summary_tab_by_epc_number <- function(data,
                                            n_epc){
   
@@ -292,7 +463,24 @@ make_summary_tab_by_epc_number <- function(data,
   
 }
 
-# Wrapper function to make summary tables on WF prevalence for different EPC numbers
+#' Combine WF prevalence summary tables across multiple EPC sequence numbers
+#'
+#' @description
+#' Calls \code{make_summary_tab_by_epc_number} iteratively for EPC counts 2 through
+#' \code{max_n_epc} and binds the resulting wide-format tables into a single data frame.
+#' The output is used to produce the repeat-EPC panel in the manuscript tables.
+#'
+#' @param data A data frame of property-level EPC records with covariates. Passed
+#'   to each call of \code{make_summary_tab_by_epc_number}.
+#' @param max_n_epc A positive integer specifying the maximum total number of EPC
+#'   certificates to include. Tables are generated for \code{n_epc = 2, 3, ...,
+#'   max_n_epc}. Properties with more than \code{max_n_epc} certificates are excluded
+#'   due to small sample sizes.
+#'
+#' @return A data frame produced by \code{dplyr::bind_rows} across all EPC count
+#'   strata, with \code{NA} for columns that do not exist at lower EPC counts (e.g.
+#'   \code{wood_perc_h_4} is \code{NA} for rows where \code{n_epc == 2}).
+
 make_summary_tabs_by_epc_number <- function(data,
                                             max_n_epc) {
   

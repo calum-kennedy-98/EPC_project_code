@@ -16,6 +16,84 @@
 # The resulting dataset is joined to the main EPC data to create a summary LSOA-level
 # dataset 
 
+#' Enrich cleaned EPC records with statistical geography identifiers and area-level covariates
+#'
+#' @description
+#' Joins the cleaned EPC dataset to statistical geography identifiers (LSOA, ward, LAD,
+#' region) and to an LSOA-level covariate lookup (IMD, ethnicity, age, urban/rural
+#' classification). Two linkage strategies are used: EPC records with a UPRN are joined
+#' via the UPRN-to-geography lookup, while records with a missing UPRN are joined via
+#' postcode. The function also identifies the most recent EPC for each unique property
+#' and assigns EPC sequence numbers.
+#'
+#' @param data A data frame of cleaned EPC records produced by \code{clean_data_epc}.
+#'   Must contain columns \code{uprn}, \code{postcode}, and \code{inspection_date}.
+#' @param data_uprn_sca_lookup A data frame produced by \code{make_uprn_sca_lookup},
+#'   containing one row per UPRN with columns for statistical geography codes, the
+#'   \code{sca_area} binary indicator, and \code{long}/\code{lat} Web Mercator
+#'   coordinates.
+#' @param path_lsoa_size A character string giving the file path to the LSOA area CSV.
+#'   Passed to \code{make_lsoa_lookup_data}.
+#' @param path_imd_eng A character string giving the file path to the English IMD 2019
+#'   Excel workbook. Passed to \code{make_lsoa_lookup_data}.
+#' @param path_imd_wales A character string giving the file path to the Welsh IMD 2019
+#'   ODS file. Passed to \code{make_lsoa_lookup_data}.
+#' @param path_lsoa11_lsoa21_lookup A character string giving the file path to the
+#'   LSOA 2011-to-2021 best-fit lookup CSV. Passed to \code{make_lsoa_lookup_data}.
+#' @param path_ethnicity A character string giving the file path to the Census 2021
+#'   ethnicity CSV. Passed to \code{make_lsoa_lookup_data}.
+#' @param path_region A character string giving the file path to the ward-to-region
+#'   lookup CSV. Passed to \code{make_lsoa_lookup_data}.
+#' @param path_ward A character string giving the file path to the LSOA-to-ward
+#'   lookup CSV. Passed to \code{make_lsoa_lookup_data}.
+#' @param path_urban_rural A character string giving the file path to the
+#'   Rural/Urban Classification CSV. Passed to \code{make_lsoa_lookup_data}.
+#' @param path_age A character string giving the file path to the LSOA median age
+#'   Excel workbook. Passed to \code{make_lsoa_lookup_data}.
+#'
+#' @return A data frame with one row per EPC certificate, combining all columns from
+#'   the cleaned EPC data with geography and covariate columns from the UPRN lookup
+#'   and LSOA lookup. Key additional columns include:
+#'   \describe{
+#'     \item{\code{most_recent}}{Logical. \code{TRUE} if this is the most recent EPC
+#'       for the UPRN (based on \code{inspection_date} order set in
+#'       \code{clean_data_epc}). Always \code{TRUE} for records without a UPRN.}
+#'     \item{\code{epc_number}}{Integer. Sequential EPC number for the property,
+#'       with 1 denoting the earliest and \code{total_epc} the most recent.}
+#'     \item{\code{total_epc}}{Integer. Total number of EPCs recorded for the UPRN.
+#'       Always 1 for records without a UPRN.}
+#'     \item{\code{urban}}{Integer (0/1/NA). 1 if the LSOA's 2011 Rural/Urban
+#'       Classification contains "Urban", 0 if it contains "Rural", \code{NA} if
+#'       the classification is missing.}
+#'     \item{\code{sca_area}}{Integer (0/1). Smoke Control Area membership from the
+#'       UPRN lookup.}
+#'     \item{\code{long}, \code{lat}}{Numeric. Web Mercator coordinates.}
+#'     \item{\code{lsoa21cd}, \code{wd22cd}, \code{lad22cd}, \code{rgn22nm}}{Geography
+#'       identifiers from the UPRN/postcode lookup.}
+#'     \item{\code{imd_score}, \code{imd_decile}, \code{white_pct},
+#'       \code{median_age_mid_2022}, \code{area_in_km2}, \code{num_people}}{LSOA-level
+#'       covariates from \code{make_lsoa_lookup_data}.}
+#'   }
+#'   Columns \code{postcode}, \code{inspection_date}, \code{pcds}, and \code{ruc11}
+#'   are dropped from the output.
+#'
+#' @details
+#' \strong{UPRN linkage}: EPC records with a non-missing UPRN are joined to the UPRN
+#' lookup using \code{uprn} as the key, then full-joined to the LSOA covariate lookup
+#' on \code{lsoa21cd} (to retain LSOAs with no EPC coverage). Scottish LSOAs
+#' (identified by \code{rgn22cd == "S99999999"}) are excluded at this stage.
+#'
+#' \strong{Postcode fallback}: Records with a missing UPRN are joined to a postcode-level
+#' summary of the UPRN lookup (\code{data_geo_pcds}) using the cleaned postcode as the
+#' key. Postcodes that span multiple LSOAs (identified via \code{janitor::get_dupes})
+#' are excluded from this lookup, as their LSOA cannot be determined unambiguously.
+#' Records matched via postcode are assumed to be the most recent EPC for the property.
+#'
+#' \strong{Most-recent identification}: For UPRN-linked records, the most recent EPC is
+#' identified using \code{data.table::rowid}, which returns 1 for the first row within
+#' each UPRN group. Because \code{clean_data_epc} arranges records in descending
+#' \code{inspection_date} order, the first row corresponds to the most recent certificate.
+
 # Define function to merge covars with cleaned main EPC data -------------------
 
 merge_data_epc_cleaned_covars <- function(data,

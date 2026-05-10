@@ -11,6 +11,86 @@
 
 
 
+#' Construct an LSOA-level covariate lookup table
+#'
+#' @description
+#' Assembles a single LSOA-level data frame by loading and joining multiple secondary
+#' data sources: area size, Indices of Multiple Deprivation (IMD 2019), urban/rural
+#' classification, median age, ethnicity, and ward/region geography. The resulting
+#' lookup is joined to the cleaned EPC data in \code{merge_data_epc_cleaned_covars}
+#' to enable area-level analysis.
+#'
+#' @param path_lsoa_size A character string giving the file path to the ONS LSOA
+#'   area measurement CSV (SAM_LSOA_DEC_2021_EW). Must contain columns \code{LSOA21CD}
+#'   and \code{"Extent of the Realm (Area in KM2)"}.
+#' @param path_imd_eng A character string giving the file path to the English IMD 2019
+#'   Excel workbook (File 5, IoD2019 Scores). Data are read from the sheet
+#'   \code{"IoD2019 Scores"} using LSOA 2011 codes.
+#' @param path_imd_wales A character string giving the file path to the Welsh IMD 2019
+#'   ODS file (WIMD 2019). Data are read from the sheet \code{"Data"} (range A4:D1913)
+#'   using LSOA 2011 codes.
+#' @param path_lsoa11_lsoa21_lookup A character string giving the file path to the ONS
+#'   best-fit lookup CSV mapping 2011 LSOA codes to 2021 LSOA codes. Used to
+#'   crosswalk IMD and urban/rural data from 2011 to 2021 boundaries.
+#' @param path_ethnicity A character string giving the file path to the Census 2021
+#'   ethnicity table CSV (TS021), containing 20-category ethnic group counts by LSOA
+#'   2021 code.
+#' @param path_region A character string giving the file path to the ONS ward-to-region
+#'   lookup CSV (Ward to LAD to County to Region to Country, December 2022), containing
+#'   columns \code{wd22cd}, \code{lad22cd}, \code{lad22nm}, \code{rgn22nm}, and
+#'   \code{ctry22nm}.
+#' @param path_ward A character string giving the file path to the ONS LSOA-to-ward
+#'   lookup CSV (LSOA 2021 to Ward to LTLA, May 2022), containing columns
+#'   \code{lsoa21cd}, \code{lsoa21nm}, \code{wd22cd}, and \code{wd22nm}.
+#' @param path_urban_rural A character string giving the file path to the ONS
+#'   Rural/Urban Classification 2011 CSV for LSOAs in England and Wales, containing
+#'   columns \code{LSOA11CD} and \code{RUC11}.
+#' @param path_age A character string giving the file path to the ONS LSOA median age
+#'   Excel workbook. Data are read from the sheet \code{"Median age LSOA 2021"}
+#'   (skipping 3 header rows), containing columns \code{lsoa_2021_code} and
+#'   \code{median_age_mid_2022}.
+#'
+#' @return A tibble with one row per 2021 LSOA in England and Wales, containing:
+#'   \describe{
+#'     \item{\code{lsoa21cd}}{Character. 2021 LSOA code.}
+#'     \item{\code{area_in_km2}}{Numeric. Area of the LSOA in km\eqn{^2}.}
+#'     \item{\code{imd_score}}{Numeric. IMD 2019 score (English scale for English LSOAs;
+#'       WIMD 2019 score for Welsh LSOAs). Where a 2021 LSOA corresponds to multiple
+#'       2011 LSOAs, the mean IMD score across those 2011 LSOAs is used.}
+#'     \item{\code{ruc11}}{Factor. Rural/Urban Classification 2011 string (e.g.
+#'       \code{"Urban major conurbation"}). \code{NA} for LSOAs that could not be
+#'       uniquely matched via the 2011-to-2021 crosswalk.}
+#'     \item{\code{median_age_mid_2022}}{Numeric. Median age of residents at mid-2022.}
+#'     \item{\code{num_people}, \code{num_white}, \code{white_pct}}{Numeric. Census 2021
+#'       total resident count, white ethnic group count, and percentage white, respectively.}
+#'     \item{\code{wd22cd}, \code{wd22nm}, \code{lad22cd}, \code{lad22nm},
+#'       \code{rgn22nm}}{Factor. Ward, LAD, and region codes and names (December 2022
+#'       boundaries). Wales is treated as a single region (\code{rgn22nm = "Wales"}).}
+#'     \item{\code{imd_decile}, \code{white_dec}}{Integer. IMD and white ethnicity
+#'       deciles (1 = most deprived / highest white percentage), calculated within
+#'       region (\code{rgn22nm}).}
+#'   }
+#'
+#' @details
+#' \strong{IMD crosswalk}: IMD 2019 scores are published on 2011 LSOA boundaries.
+#' These are joined to 2021 LSOA codes via the ONS best-fit lookup. Where a 2021 LSOA
+#' encompasses multiple 2011 LSOAs (boundary merges), the mean IMD score is used as an
+#' approximation. This is reasonable given that LSOAs are designed to contain similar
+#' population sizes.
+#'
+#' \strong{Urban/rural crosswalk}: The 2011 Rural/Urban Classification is similarly
+#' crosswalked to 2021 boundaries. LSOAs that correspond to multiple 2011 entries
+#' (and therefore cannot be unambiguously classified) are set to \code{NA}.
+#'
+#' \strong{Duplicate LSOAs}: Four LSOAs span two Local Authorities (Ryedale/Scarborough)
+#' due to an electoral ward boundary. The function resolves this by retaining the row
+#' where the LSOA 2021 name contains the LAD name, effectively assigning each LSOA to
+#' its primary Local Authority.
+#'
+#' \strong{IMD deciles}: Deciles are calculated within region, so a decile of 1
+#' indicates the most deprived LSOA within that region. Wales is treated as its own
+#' region because WIMD and English IMD scores are not directly comparable.
+
 # Define function to make LSOA-level lookup data -------------------------------
 
 make_lsoa_lookup_data <- function(path_lsoa_size,

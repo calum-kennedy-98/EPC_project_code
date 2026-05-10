@@ -1,5 +1,43 @@
 
 
+#' Merge raw EPC certificate CSV files from Local Authority subfolders into a single parquet file
+#'
+#' @description
+#' Iterates over all subdirectories in \code{path_data_epc_folders}, reads each
+#' \code{certificates.csv} file in parallel using \code{furrr::future_map_dfr}, and
+#' writes the combined data frame to a single Parquet file in \code{output_dir}.
+#' If the output Parquet file already exists, the user is prompted interactively to
+#' decide whether to re-run the merge.
+#'
+#' @param path_data_epc_folders A character string giving the absolute path to the
+#'   parent directory containing one subdirectory per Local Authority, each of which
+#'   holds a \code{certificates.csv} file. This corresponds to the directory structure
+#'   produced by unzipping the bulk EPC download from the MHCLG Open Data Communities
+#'   portal.
+#' @param epc_cols_to_select A character vector of column names to retain from each
+#'   \code{certificates.csv}. Defaults to
+#'   \code{c("UPRN", "SECONDHEAT_DESCRIPTION", "MAINHEAT_DESCRIPTION",
+#'   "INSPECTION_DATE", "CONSTRUCTION_AGE_BAND", "PROPERTY_TYPE", "BUILT_FORM",
+#'   "TENURE", "POSTCODE")}.
+#'   Column names must match the raw capitalised headers in the EPC data exactly.
+#' @param output_dir A character string giving the directory path (relative to the
+#'   project root) where the merged Parquet file will be written as
+#'   \code{data_epc_raw.parquet}. Defaults to \code{"Data/raw/epc_data"}. The
+#'   directory is created if it does not already exist.
+#'
+#' @return Called for its side effect: writes \code{data_epc_raw.parquet} to
+#'   \code{output_dir}. Returns \code{NULL} invisibly. If the input directory does
+#'   not exist, a message is printed and no file is written.
+#'
+#' @details
+#' Parallelisation uses \code{future::plan(multisession, workers = 2)}. The plan is
+#' reset to sequential after the merge completes. Subdirectories that do not contain
+#' a \code{certificates.csv} file are silently skipped (returning an empty tibble).
+#' The interactive prompt is triggered whenever \code{data_epc_raw.parquet} already
+#' exists in \code{output_dir}; non-interactive sessions will hang at this prompt,
+#' so the output file should be deleted or the function skipped if re-running in a
+#' non-interactive context.
+
 get_epc_data <- function(path_data_epc_folders,
                                   epc_cols_to_select = c("UPRN", "SECONDHEAT_DESCRIPTION", "MAINHEAT_DESCRIPTION",
                                                          "INSPECTION_DATE", "CONSTRUCTION_AGE_BAND", "PROPERTY_TYPE",

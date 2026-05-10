@@ -10,6 +10,51 @@
 
 
 
+#' Assign Smoke Control Area status to a UPRN-level spatial dataset
+#'
+#' @description
+#' Performs a spatial join between a UPRN-level point dataset and Smoke Control Area
+#' (SCA) polygon shapefiles for England and Wales, producing a binary indicator
+#' (\code{sca_area}) recording whether each UPRN falls within an SCA. Eastings/northings
+#' in British National Grid (BNG) are also converted to Web Mercator (EPSG:3857)
+#' longitude/latitude coordinates for subsequent mapping and spatial merging.
+#'
+#' @param geo_data A data frame containing UPRN-level records with columns for
+#'   eastings and northings in British National Grid coordinates, as well as UPRN
+#'   and statistical geography identifiers. Typically the raw ONS NSUL lookup
+#'   (\code{Data/raw/geo_files/nsul_lookup.parquet}).
+#' @param sca_path_eng A character string giving the file path to the England SCA
+#'   polygon shapefile (\code{.shp}). This shapefile must contain a \code{type}
+#'   column identifying feature type; only features with \code{type == "Smoke Control
+#'   Area"} are used.
+#' @param sca_path_wal A character string giving the file path to the Wales SCA
+#'   polygon shapefile (\code{.shp}). All features in this shapefile are treated as
+#'   SCA polygons.
+#' @param long_var A character string giving the name of the column in \code{geo_data}
+#'   containing BNG eastings (e.g. \code{"gridgb1e"}).
+#' @param lat_var A character string giving the name of the column in \code{geo_data}
+#'   containing BNG northings (e.g. \code{"gridgb1n"}).
+#'
+#' @return A data frame (no geometry column) with the same rows as \code{geo_data}
+#'   plus two new columns:
+#'   \describe{
+#'     \item{\code{sca_area}}{Integer (0/1). 1 if the UPRN falls within a Smoke
+#'       Control Area, 0 otherwise.}
+#'     \item{\code{long}, \code{lat}}{Numeric. Web Mercator (EPSG:3857) x and y
+#'       coordinates, used for downstream spatial operations and mapping.}
+#'   }
+#'   The original BNG coordinate columns (\code{long_var}, \code{lat_var}) and the
+#'   \code{geometry} column are removed from the output.
+#'
+#' @details
+#' The England and Wales SCA shapefiles are bound by row after harmonising their
+#' columns to \code{geometry} and \code{type}. The CRS of \code{geo_data} is set to
+#' match the SCA shapefile CRS (typically EPSG:27700, BNG) before the spatial join.
+#' UPRNs that do not intersect any SCA polygon receive \code{sca_area = 0}.
+#' Web Mercator coordinates are extracted after transforming to EPSG:3857 and are
+#' stored in columns named \code{long} and \code{lat} for consistency with downstream
+#' EPC buffer operations.
+
 # Define function to merge SCA data to UPRN lookup -----------------------------
 
 merge_geo_data_sca <- function(geo_data,

@@ -1,13 +1,55 @@
 # Name of script: MakeLAEIData
-# Description: Defines function to make merged grid square LAEI data for mapping
+# Description: Defines function to make merged grid square LAEI data for mapping,
+#              combining OS AddressBase, UPRN-SCA lookup, and EPC data
 # Created by: Calum Kennedy (calum.kennedy.20@ucl.ac.uk)
 # Created on: 30-11-2024
 # Latest update by: Calum Kennedy
 # Latest update on: 30-11-2024
 
-# Comments ---------------------------------------------------------------------
-
-
+#' Build a grid-square-level LAEI shapefile with predicted wood fuel counts and PM\eqn{_{2.5}} emissions
+#'
+#' @description
+#' Merges the London Atmospheric Emissions Inventory (LAEI) grid square shapefile with
+#' OS AddressBase residential property counts, UPRN-level geographic lookup data, and
+#' EPC wood fuel indicators to produce a spatially referenced data frame of predicted
+#' wood fuel (WF) heat source counts and domestic biomass PM\eqn{_{2.5}} emissions by
+#' LAEI grid square. Only GLA (Greater London Authority) grid squares are retained.
+#'
+#' @param path_data_laei A character string giving the file path to the LAEI shapefile
+#'   (\code{.shp}). The shapefile must contain columns \code{borough} (to filter GLA
+#'   areas), \code{biomass19} (domestic biomass PM\eqn{_{2.5}} emissions in 2019 in
+#'   kilotonnes), and \code{grid_id} (unique grid square identifier).
+#' @param data_os A data frame of OS AddressBase residential property records with a
+#'   \code{uprn} column and a \code{property_type_census} column.
+#' @param data_uprn_sca_lookup A data frame produced by \code{make_uprn_sca_lookup},
+#'   containing columns \code{uprn}, \code{rgn22cd}, \code{long}, and \code{lat}
+#'   (Web Mercator coordinates).
+#' @param data_epc_cleaned_covars A data frame produced by
+#'   \code{merge_data_epc_cleaned_covars}, containing columns \code{uprn},
+#'   \code{most_recent}, and \code{any_wood}.
+#'
+#' @return An \code{sf} object with one row per LAEI grid square (GLA only), containing:
+#'   \describe{
+#'     \item{\code{grid_id}}{Character. Unique LAEI grid square identifier.}
+#'     \item{\code{n_wood_pred}}{Numeric. Predicted total number of WF heat sources in
+#'       the grid square, computed as the sum over all property types of (Census-weighted
+#'       OS property count) \eqn{\times} (EPC-derived WF prevalence for that type).}
+#'     \item{\code{pm_25_emissions}}{Numeric. Mean domestic biomass PM\eqn{_{2.5}}
+#'       emissions in 2019 across the properties in the grid square (kilotonnes/year).}
+#'     \item{\code{geometry}}{The original LAEI polygon geometry in EPSG:3857 (Web
+#'       Mercator).}
+#'   }
+#'
+#' @details
+#' The LAEI grid is filtered to GLA boroughs only (\code{borough != "Non GLA"}).
+#' OS AddressBase records are joined to the UPRN lookup to obtain coordinates, then
+#' restricted to London UPRNs (\code{rgn22cd == "E12000007"}). EPC WF indicators
+#' (\code{any_wood}) from the most recent certificate per UPRN are left-joined to the
+#' combined OS/UPRN dataset. Properties with missing coordinates or missing Census
+#' property type are excluded before the spatial join to the LAEI grid.
+#' Predicted WF counts are computed by applying grid-square-level EPC prevalence rates
+#' (stratified by property type) to OS property counts, then summing across property types.
+#' This approach mirrors the Census-reweighting methodology in \code{make_summary_data_by_group}.
 
 # Define function to make summary data by group --------------------------------
 
